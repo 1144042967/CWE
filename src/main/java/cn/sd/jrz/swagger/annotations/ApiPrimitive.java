@@ -8,7 +8,7 @@ import java.lang.annotation.Target;
 /**
  * 用于描述接口字段
  */
-@Target(ElementType.METHOD)
+@Target(value = {ElementType.METHOD, ElementType.FIELD})
 @Retention(RetentionPolicy.RUNTIME)
 public @interface ApiPrimitive {
     /**

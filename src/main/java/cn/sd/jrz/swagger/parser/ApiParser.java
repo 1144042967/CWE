@@ -2,17 +2,15 @@ package cn.sd.jrz.swagger.parser;
 
 import cn.sd.jrz.swagger.annotations.Api;
 import cn.sd.jrz.swagger.annotations.ApiMethod;
+import cn.sd.jrz.swagger.annotations.ApiObject;
 import cn.sd.jrz.swagger.annotations.ApiPrimitive;
-import cn.sd.jrz.swagger.annotations.PrimitiveType;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonPrimitive;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestMethod;
-import org.springframework.web.bind.annotation.RestController;
 
 import java.lang.annotation.Annotation;
-import java.lang.reflect.Method;
+import java.lang.reflect.*;
 import java.util.Arrays;
 
 import static cn.sd.jrz.swagger.annotations.PrimitiveType.*;
@@ -23,161 +21,243 @@ import static cn.sd.jrz.swagger.annotations.PrimitiveType.*;
 public class ApiParser {
     public JsonArray parse(Class<?>... clss) throws ClassNotFoundException {
         JsonArray result = new JsonArray();
-        for (Class cls : clss) {
-            JsonObject parse = parse(cls);
-            if (parse != null) {
-                result.add(parse);
+        for (Class controllerClass : clss) {
+            JsonObject controllerApi = parseControllerClass(controllerClass);
+            if (controllerApi != null) {
+                result.add(controllerApi);
             }
         }
         return result;
     }
 
-    private JsonObject parse(Class<?> cls) {
-        //解析类注解
-        Annotation[] annotations = cls.getAnnotations();
-        boolean isRestController = false;
-        Api api = null;
+    private JsonObject parseControllerClass(Class<?> controllerClass) {
+        JsonObject controllerApi = new JsonObject();
+        Annotation[] annotations = controllerClass.getDeclaredAnnotations();
+        boolean isApi = false;
         for (Annotation annotation : annotations) {
-            if (annotation instanceof RestController) {
-                isRestController = true;
-            } else if (annotation instanceof Api) {
-                api = (Api) annotation;
+            if (annotation instanceof Api) {
+                isApi = true;
+                Api api = (Api) annotation;
+                //处理类头
+                controllerApi.addProperty(ApiConstant.controllerDescription, api.value());
+                //处理接口
+                JsonArray interfaceArray = new JsonArray();
+                Method[] methods = controllerClass.getMethods();
+                for (Method method : methods) {
+                    JsonObject interfaceObject = parseInterfaceMethod(method);
+                    if (interfaceObject != null) {
+                        interfaceArray.add(interfaceObject);
+                    }
+                }
+                controllerApi.add(ApiConstant.interfaceArray, interfaceArray);
             }
         }
-        if (!isRestController || api == null) {
-            return null;
-        }
-        JsonObject apiObject = new JsonObject();
-        //解析类注解
-        apiObject.addProperty("name", api.name());
-        //解析方法注解
-        JsonArray methodArray = new JsonArray();
-        Method[] methods = cls.getMethods();
-        for (Method m : methods) {
-            JsonObject methodObject = parseMethod(m);
-            if (methodObject != null) {
-                methodArray.add(methodObject);
-            }
-        }
-        apiObject.add("methodArray", methodArray);
-        return apiObject;
+        return isApi ? controllerApi : null;
     }
 
-    private JsonObject parseMethod(Method m) {
-        Annotation[] annotations = m.getDeclaredAnnotations();
-        JsonObject methodObject = new JsonObject();
-        boolean hasApiMethod = false;
+    private JsonObject parseInterfaceMethod(Method method) {
+        JsonObject interfaceObject = new JsonObject();
+        Annotation[] annotations = method.getDeclaredAnnotations();
+        boolean isApiMethod = false;
+        //处理接口相关注解
         for (Annotation annotation : annotations) {
             if (annotation instanceof RequestMapping) {
                 RequestMapping rm = (RequestMapping) annotation;
-                //处理url
-                String[] values = rm.value();
-                JsonArray urlArray = new JsonArray();
-                Arrays.asList(values).forEach(value -> urlArray.add(new JsonPrimitive(value)));
-                methodObject.add("url", urlArray);
-                //处理method
-                RequestMethod[] methods = rm.method();
-                JsonArray methodArray = new JsonArray();
-                Arrays.asList(methods).forEach(value -> methodArray.add(new JsonPrimitive(value.toString())));
-                methodObject.add("method", methodArray);
-                //处理produces
-                String[] produces = rm.produces();
-                JsonArray produceArray = new JsonArray();
-                Arrays.asList(produces).forEach(value -> produceArray.add(new JsonPrimitive(value)));
-                methodObject.add("produces", produceArray);
+                //路径
+                if (rm.value().length > 0) {
+                    JsonArray pathArray = new JsonArray();
+                    Arrays.asList(rm.value()).forEach(path -> pathArray.add(new JsonPrimitive(path)));
+                    interfaceObject.add(ApiConstant.pathArray, pathArray);
+                }
+                //请求方法
+                if (rm.method().length > 0) {
+                    JsonArray methodArray = new JsonArray();
+                    Arrays.asList(rm.method()).forEach(m -> methodArray.add(new JsonPrimitive(m.toString())));
+                    interfaceObject.add(ApiConstant.methodArray, methodArray);
+                }
+                //返回格式
+                if (rm.produces().length > 0) {
+                    JsonArray productArray = new JsonArray();
+                    Arrays.asList(rm.produces()).forEach(product -> productArray.add(new JsonPrimitive(product)));
+                    interfaceObject.add(ApiConstant.productArray, productArray);
+                }
             } else if (annotation instanceof ApiMethod) {
-                hasApiMethod = true;
+                isApiMethod = true;
                 ApiMethod am = (ApiMethod) annotation;
-                JsonObject parse = parse(am.inPath());
-                if (parse != null) {
-                    methodObject.add("inPath", parse);
+                //name
+                interfaceObject.addProperty(ApiConstant.interfaceName, am.name());
+                //path
+                JsonArray inPath = parseParams(am.inPath(), null);
+                if (inPath != null) {
+                    interfaceObject.add(ApiConstant.inPath, inPath);
                 }
-                parse = parse(am.inQuery());
-                if (parse != null) {
-                    methodObject.add("inQuery", parse);
+                //query
+                JsonArray inQuery = parseParams(am.inQuery(), null);
+                if (inQuery != null) {
+                    interfaceObject.add(ApiConstant.inQuery, inQuery);
                 }
-                parse = parse(am.inHeader());
-                if (parse != null) {
-                    methodObject.add("inHeader", parse);
+                //in header
+                JsonArray inHeader = parseParams(am.inHeader(), null);
+                if (inHeader != null) {
+                    interfaceObject.add(ApiConstant.inHeader, inHeader);
                 }
-                parse = parse(am.inBody());
-                if (parse != null) {
-                    methodObject.add("inBody", parse);
+                //in body
+                JsonArray inBody = parseParams(am.inBody(), null);
+                if (inBody != null) {
+                    interfaceObject.add(ApiConstant.inBody, inBody);
                 }
-                parse = parse(am.outHeader());
-                if (parse != null) {
-                    methodObject.add("outHeader", parse);
+                //out header
+                JsonArray outHeader = parseParams(am.outHeader(), null);
+                if (outHeader != null) {
+                    interfaceObject.add(ApiConstant.outHeader, outHeader);
                 }
-                parse = parse(am.outBody());
-                if (parse != null) {
-                    methodObject.add("outBody", parse);
+                //out body
+                JsonArray merge = merge(parseParams(am.outBody(), null), interfaceObject.getAsJsonArray(ApiConstant.outBody));
+                if (merge != null) {
+                    interfaceObject.add(ApiConstant.outBody, merge);
+                }
+            } else if (annotation instanceof ApiObject) {
+                JsonArray result = merge(parseObject(method.getReturnType()), interfaceObject.getAsJsonArray(ApiConstant.outBody));
+                if (result != null) {
+                    interfaceObject.add(ApiConstant.outBody, result);
                 }
             }
         }
-        if (!hasApiMethod) {
-            return null;
+        //处理ApiObject注解参数
+        Parameter[] parameters = method.getParameters();
+        for (Parameter parameter : parameters) {
+            for (Annotation annotation : parameter.getAnnotations()) {
+                if (annotation instanceof ApiObject) {
+                    JsonArray result = merge(parseObject(parameter.getType()), interfaceObject.getAsJsonArray(ApiConstant.inBody));
+                    if (result != null) {
+                        interfaceObject.add(ApiConstant.inBody, result);
+                    }
+                }
+            }
+        }
+        return isApiMethod ? interfaceObject : null;
+    }
+
+    private JsonArray merge(JsonArray array1, JsonArray array2) {
+        JsonArray result = new JsonArray();
+        if (array1 != null) {
+            for (int i = 0; i < array1.size(); i++) {
+                result.add(array1.get(i));
+            }
+        }
+        if (array2 != null) {
+            for (int i = 0; i < array2.size(); i++) {
+                result.add(array2.get(i));
+            }
+        }
+        return result.size() > 0 ? result : null;
+    }
+
+    private JsonArray parseParams(ApiPrimitive[] primitives, JsonArray def) {
+        if (primitives == null || primitives.length == 0 || isDefaultPrimitive(primitives)) {
+            return def;
+        }
+        JsonArray paramArray = new JsonArray();
+        for (ApiPrimitive primitive : primitives) {
+            if (!"".equals(primitive.ref())) {
+                continue;
+            }
+            JsonObject paramObject = new JsonObject();
+            //处理基本数据
+            paramObject.addProperty(ApiConstant.name, primitive.name());
+            paramObject.addProperty(ApiConstant.type, primitive.type().getDescription());
+            paramObject.addProperty(ApiConstant.note, primitive.note());
+            paramObject.addProperty(ApiConstant.required, primitive.req());
+            paramObject.addProperty(ApiConstant.defaultValue, primitive.def());
+            paramObject.addProperty(ApiConstant.allowValue, primitive.allow());
+            paramObject.addProperty(ApiConstant.example, primitive.example());
+            //处理子类型数据
+            if (primitive.type() == LIST_MAP || primitive.type() == MAP) {
+                JsonArray subParams = parserSubParams(primitive.name(), primitives);
+                if (subParams != null) {
+                    paramObject.add(ApiConstant.subParams, subParams);
+                }
+            }
+            paramArray.add(paramObject);
+        }
+        return paramArray.size() > 0 ? paramArray : def;
+    }
+
+    private boolean isDefaultPrimitive(ApiPrimitive[] primitives) {
+        if (primitives.length == 1) {
+            ApiPrimitive primitive = primitives[0];
+            return "default".equals(primitive.name()) && STRING == primitive.type() && "default".equals(primitive.note());
         } else {
-            return methodObject;
+            return false;
         }
     }
 
-    private JsonObject parse(ApiPrimitive[] primitives) {
-        if (primitives == null || primitives.length == 0) {
-            return null;
-        }
-        if (primitives.length == 1 && isDefaultPrimitive(primitives[0])) {
-            return null;
-        }
-        return getObject(null, primitives);
-    }
-
-    private boolean isDefaultPrimitive(ApiPrimitive primitive) {
-        String name = primitive.name();
-        PrimitiveType type = primitive.type();
-        String note = primitive.note();
-        return "default".equals(name) && STRING == type && "default".equals(note);
-    }
-
-    private JsonObject getObject(ApiPrimitive masterPrimitive, ApiPrimitive[] primitives) {
-        if (masterPrimitive == null) {
-            System.out.println("解析根结点");
-        } else {
-            System.out.println("解析" + masterPrimitive.name());
-        }
-        JsonObject object = new JsonObject();
-        String ref = "";
-        if (masterPrimitive != null) {
-            ref = masterPrimitive.name();
-            setAttributes(object, masterPrimitive);
-        }
+    private JsonArray parserSubParams(String ref, ApiPrimitive[] primitives) {
+        JsonArray subParams = new JsonArray();
         for (ApiPrimitive primitive : primitives) {
             if (!ref.equals(primitive.ref())) {
                 continue;
             }
-            if (primitive.type() == MAP || primitive.type() == LIST_MAP) {
-                object.add(primitive.name(), getObject(primitive, primitives));
-            }else{
-                object.add(primitive.name(), getObject(null, primitives));
+            JsonObject paramObject = new JsonObject();
+            //处理基本数据
+            paramObject.addProperty(ApiConstant.name, primitive.name());
+            paramObject.addProperty(ApiConstant.type, primitive.type().getDescription());
+            paramObject.addProperty(ApiConstant.note, primitive.note());
+            paramObject.addProperty(ApiConstant.required, primitive.req());
+            paramObject.addProperty(ApiConstant.defaultValue, primitive.def());
+            paramObject.addProperty(ApiConstant.allowValue, primitive.allow());
+            paramObject.addProperty(ApiConstant.example, primitive.example());
+            //处理子类型数据
+            if (primitive.type() == LIST_MAP || primitive.type() == MAP) {
+                JsonArray subSubParams = parserSubParams(primitive.name(), primitives);
+                if (subSubParams != null) {
+                    paramObject.add(ApiConstant.subParams, subSubParams);
+                }
             }
+            subParams.add(paramObject);
         }
-        return object;
+        return subParams.size() > 0 ? subParams : null;
     }
 
-    private void setAttributes(JsonObject object, ApiPrimitive primitive) {
-        object.addProperty("name", primitive.name());
-        object.addProperty("type", primitive.type().getDescription());
-        object.addProperty("note", primitive.note());
-        if (primitive.req()) {
-            object.addProperty("required", true);
+    private JsonArray parseObject(Class<?> cls) {
+        JsonArray result = new JsonArray();
+        Field[] fields = cls.getDeclaredFields();
+        for (Field field : fields) {
+            Annotation[] annotations = field.getDeclaredAnnotations();
+            for (Annotation annotation : annotations) {
+                if (annotation instanceof ApiPrimitive) {
+                    ApiPrimitive primitive = (ApiPrimitive) annotation;
+                    JsonObject paramObject = new JsonObject();
+                    //处理基本数据
+                    paramObject.addProperty(ApiConstant.name, primitive.name());
+                    paramObject.addProperty(ApiConstant.type, primitive.type().getDescription());
+                    paramObject.addProperty(ApiConstant.note, primitive.note());
+                    paramObject.addProperty(ApiConstant.required, primitive.req());
+                    paramObject.addProperty(ApiConstant.defaultValue, primitive.def());
+                    paramObject.addProperty(ApiConstant.allowValue, primitive.allow());
+                    paramObject.addProperty(ApiConstant.example, primitive.example());
+                    //处理子类型数据
+                    if (primitive.type() == LIST_MAP) {
+                        //获得泛型
+                        ParameterizedType type = (ParameterizedType) field.getGenericType();
+                        Class real = (Class) type.getActualTypeArguments()[0];
+                        //获得类型
+                        JsonArray subSubParams = parseObject(real);
+                        if (subSubParams != null) {
+                            paramObject.add(ApiConstant.subParams, subSubParams);
+                        }
+
+                    } else if (primitive.type() == MAP) {
+                        //获得类型
+                        JsonArray subSubParams = parseObject(field.getType());
+                        if (subSubParams != null) {
+                            paramObject.add(ApiConstant.subParams, subSubParams);
+                        }
+                    }
+                    result.add(paramObject);
+                }
+            }
         }
-        if (!"".equals(primitive.def())) {
-            object.addProperty("defaultValue", primitive.def());
-        }
-        if (!"".equals(primitive.allow())) {
-            object.addProperty("allowableValues", primitive.allow());
-        }
-        if (!"".equals(primitive.example())) {
-            object.addProperty("example", primitive.example());
-        }
+        return result.size() > 0 ? result : null;
     }
 }

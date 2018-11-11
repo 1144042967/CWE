@@ -1,23 +1,14 @@
 package cn.sd.jrz.test;
 
-import cn.sd.jrz.swagger.annotations.Api;
-import cn.sd.jrz.swagger.annotations.ApiMethod;
-import cn.sd.jrz.swagger.annotations.ApiPrimitive;
-import cn.sd.jrz.swagger.annotations.PrimitiveType;
+import cn.sd.jrz.swagger.annotations.*;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RestController;
 
 import static cn.sd.jrz.swagger.annotations.PrimitiveType.INTEGER;
 import static cn.sd.jrz.swagger.annotations.PrimitiveType.STRING;
 
-@Api(name = "子产品管理样例控制器",
-        inHeader = {
-                @ApiPrimitive(name = "userId", type = INTEGER, note = "用户ID", req = true),
-                @ApiPrimitive(name = "token", type = STRING, note = "权限标记", req = true)
-        },
-        outHeader = {
-                @ApiPrimitive(name = "resultCode", type = INTEGER, note = "结果码")
-        }
-)
+@Api("子产品管理样例控制器")
 @RestController
 public class DemoController {
     @ApiMethod(name = "插入子产品",
@@ -25,7 +16,8 @@ public class DemoController {
                     @ApiPrimitive(name = "handlerType", type = STRING, note = "操作类型", allow = "insert、delete", def = "insert")
             },
             inQuery = {
-                    @ApiPrimitive(name = "productId", type = INTEGER, note = "要操作的产品ID", req = true)
+                    @ApiPrimitive(name = "productId", type = INTEGER, note = "要操作的产品ID", req = true),
+                    @ApiPrimitive(name = "productId2", type = INTEGER, note = "要操作的产品ID", req = true)
             },
             inBody = {
                     @ApiPrimitive(name = "productSubList", type = PrimitiveType.LIST_MAP, note = "子产品列表", req = true),
@@ -40,7 +32,9 @@ public class DemoController {
                     @ApiPrimitive(name = "result", type = STRING, note = "操作结果", req = true)
             }
     )
-    public String insert(String input) {
+    @ApiObject
+    @RequestMapping(value = "/test/demo", method = RequestMethod.POST, produces = "json")
+    public TestBean insert(@ApiObject TestBean input) {
         return input;
     }
 }
