@@ -1,13 +1,17 @@
 package cn.sd.jrz.swagger.annotations;
 
 public enum PrimitiveType {
-    DATE_STRING("date"),
-    STRING("string"),
-    INTEGER("int"),
-    FLOAT("float"),
-    MAP("map"),
-    LIST_MAP("list<map>"),
-    LIST_SINGLE("list");
+    DATE_STRING("Date"),
+    STRING("String"),
+    INTEGER("Integer"),
+    FLOAT("Float"),
+    MAP("Map"),
+    LIST_SINGLE("List"),
+    LIST_DATE("List<Date>"),
+    LIST_STRING("List<String>"),
+    LIST_INTEGER("List<Integer>"),
+    LIST_FLOAT("List<Float>"),
+    LIST_MAP("List<Map>");
     private String description;
 
     PrimitiveType(String description) {
